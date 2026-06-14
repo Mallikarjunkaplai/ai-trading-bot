@@ -7,7 +7,12 @@ Edit these values to tune the bot's behaviour without touching core logic.
 
 # ── Tickers ────────────────────────────────────────────────────────────────────
 # Stocks the bot will monitor and trade.
-TICKERS: list[str] = ["AAPL", "MSFT", "TSLA", "AMZN", "GOOGL"]
+# ── Tickers ────────────────────────────────────────────────────────────────────
+# Stocks the bot will monitor and trade.
+TICKERS = [
+    "AAPL", "MSFT", "TSLA", "AMZN", "GOOGL", 
+    "NVDA", "META", "NFLX", "AMD", "JPM", "BAC", "WMT", "DIS"
+]
 
 # ── Sentiment Thresholds ───────────────────────────────────────────────────────
 # Aggregated score in [-1, +1].
@@ -31,6 +36,8 @@ NEWS_MAX_ARTICLES: int = 10
 # FinBERT — fine-tuned on financial text.
 # Labels: "positive", "negative", "neutral"
 MODEL_NAME: str = "ProsusAI/finbert"
+
+DISCORD_WEBHOOK_URL = "https://discord.com/api/webhooks/1515735036358562057/hghPtw8jK2xfeewy39r5uXYHNgHJbiIeumiVUQmaXjQN_yrrAwLh1xFI19sIyEFAjp4X"
 
 # ── Alpaca API ─────────────────────────────────────────────────────────────────
 # Paper trading base URL (safe — no real money).

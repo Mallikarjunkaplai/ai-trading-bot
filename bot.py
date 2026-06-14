@@ -15,6 +15,8 @@ The scheduler (scheduler.py) calls run_cycle() automatically.
 import argparse
 import logging
 import sys
+from datetime import datetime
+import requests
 
 import config
 from news_fetcher import fetch_all_news
@@ -34,17 +36,31 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 
+def send_discord_alert(action: str, ticker: str, detail: str) -> None:
+    """Helper function to send live push notifications to your Discord server."""
+    if not config.DISCORD_WEBHOOK_URL:
+        return
+    
+    # Choose an emoji color based on the action
+    emoji = "🔵"
+    if "STOP-LOSS" in action or action == "SELL":
+        emoji = "🚨"
+    elif "TAKE-PROFIT" in action or action == "BUY":
+        emoji = "🟢"
+
+    payload = {
+        "content": f"{emoji} **SMART TRADER ALERT** {emoji}\n**Event:** {action}\n**Ticker:** {ticker}\n**Details:** {detail}\n**Timestamp:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    }
+    
+    try:
+        requests.post(config.DISCORD_WEBHOOK_URL, json=payload)
+    except Exception as exc:
+        log.error("Failed to send Discord alert for %s: %s", ticker, exc)
+
+
 def run_cycle(dry_run: bool = False) -> None:
     """
     Execute one full trading cycle across all configured tickers.
-
-    Steps per ticker:
-        1. Fetch recent news headlines
-        2. Skip if no news found
-        3. Run FinBERT sentiment analysis on all headlines
-        4. Apply buy/sell/hold threshold logic
-        5. Submit order (unless dry_run=True)
-        6. Log decision to trades_log.csv
     """
     log.info("=" * 60)
     log.info("Starting trading cycle | dry_run=%s", dry_run)
@@ -55,8 +71,6 @@ def run_cycle(dry_run: bool = False) -> None:
     # ── Market hours guard ────────────────────────────────────────────────────
     if not dry_run and not trader.is_market_open():
         log.warning("Market is currently CLOSED. Skipping order execution.")
-        # We still log the cycle attempt but won't place orders.
-        # In scheduler mode this is expected outside market hours.
         return
 
     # ── Account snapshot ──────────────────────────────────────────────────────
@@ -83,13 +97,16 @@ def run_cycle(dry_run: bool = False) -> None:
                 log.warning("[%s] STOP-LOSS TRIGGERED (%.2f%%) — Liquidating!", ticker, pl_pct * 100)
                 if not dry_run:
                     trader.sell(ticker)
+                    send_discord_alert("STOP-LOSS LIQUIDATION", ticker, f"Position closed at {pl_pct * 100:+.2f}% return.")
                 continue
                 
             elif pl_pct >= config.TAKE_PROFIT_PCT:
                 log.info("[%s] TAKE-PROFIT TRIGGERED (%.2f%%) — Locking in gains!", ticker, pl_pct * 100)
                 if not dry_run:
                     trader.sell(ticker)
+                    send_discord_alert("TAKE-PROFIT CLOSURE", ticker, f"Gains locked in at {pl_pct * 100:+.2f}% return.")
                 continue
+
         articles = all_news.get(ticker, [])
 
         # ── Skip if no news ───────────────────────────────────────────────────
@@ -104,7 +121,6 @@ def run_cycle(dry_run: bool = False) -> None:
             continue
 
         # ── Build text corpus for inference ──────────────────────────────────
-        # Combine headline + summary for richer signal.
         texts = []
         for art in articles:
             parts = [art["headline"]]
@@ -136,7 +152,6 @@ def run_cycle(dry_run: bool = False) -> None:
         order_result: dict = {}
 
         if score >= config.BUY_THRESHOLD:
-            # Check for existing position to avoid doubling up
             position = trader.get_position(ticker)
             if position:
                 log.info(
@@ -152,9 +167,9 @@ def run_cycle(dry_run: bool = False) -> None:
                 else:
                     log.info("[%s] Executing BUY $%.2f", ticker, config.NOTIONAL_USD)
                     order_result = trader.buy(ticker, notional=config.NOTIONAL_USD)
+                    send_discord_alert("BOT BUY ORDER", ticker, f"Executed BUY of ${config.NOTIONAL_USD} | Sentiment: {score:+.4f}")
 
         elif score <= config.SELL_THRESHOLD:
-            # Only sell if we actually hold the stock
             position = trader.get_position(ticker)
             if not position:
                 log.info("[%s] SELL signal but no position held — HOLD", ticker)
@@ -167,6 +182,7 @@ def run_cycle(dry_run: bool = False) -> None:
                 else:
                     log.info("[%s] Executing SELL (liquidate position)", ticker)
                     order_result = trader.sell(ticker)
+                    send_discord_alert("BOT SELL ORDER", ticker, f"Executed market SELL to liquidate position | Sentiment: {score:+.4f}")
 
         else:
             log.info(

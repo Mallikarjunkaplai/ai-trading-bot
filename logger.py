@@ -1,42 +1,30 @@
 """
 logger.py
 ---------
-Appends structured trade decision records to a CSV log file.
-
-Each row represents one bot decision per ticker per cycle:
-    timestamp, ticker, sentiment_score, action, order_id, status, error
+Pushes structured trade decision records directly to Supabase.
 """
 
-import csv
 import logging
 import os
-from datetime import datetime, timezone
-
-import config
+from dotenv import load_dotenv
+from supabase import create_client, Client
 
 module_logger = logging.getLogger(__name__)
 
+# Point directly to the .env file inside your frontend folder
+dotenv_path = os.path.join(os.getcwd(), 'frontend', '.env')
+load_dotenv(dotenv_path)
 
-# CSV column definitions
-_FIELDNAMES = [
-    "timestamp",
-    "ticker",
-    "sentiment_score",
-    "action",
-    "order_id",
-    "status",
-    "error",
-]
+# Grab the keys from the frontend .env file
+SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
+SUPABASE_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
 
-
-def _ensure_header(filepath: str) -> None:
-    """Write CSV header row if the file does not yet exist or is empty."""
-    if not os.path.exists(filepath) or os.path.getsize(filepath) == 0:
-        with open(filepath, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=_FIELDNAMES)
-            writer.writeheader()
-        module_logger.info("[Logger] Created new trade log: %s", filepath)
-
+# Initialize the Supabase bridge
+if not SUPABASE_URL or not SUPABASE_KEY:
+    module_logger.error("[Logger] Supabase credentials missing! Check frontend/.env file.")
+    supabase = None
+else:
+    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def log_decision(
     ticker: str,
@@ -45,24 +33,18 @@ def log_decision(
     order_id: str = "",
     status: str = "",
     error: str = "",
-    filepath: str = config.TRADES_LOG_FILE,
+    filepath: str = "",         # Kept so we don't break bot.py's config, but ignored
 ) -> None:
     """
-    Append a single trade decision row to the CSV log.
-
-    Args:
-        ticker:           Stock symbol.
-        sentiment_score:  Aggregated sentiment in [-1, +1].
-        action:           Decision taken by the bot.
-        order_id:         Alpaca order ID (empty for HOLD/SKIP).
-        status:           Order status returned by Alpaca.
-        error:            Error message if the order failed.
-        filepath:         Path to the CSV log file.
+    Push a single trade decision row directly to the Supabase database.
     """
-    _ensure_header(filepath)
+    if not supabase:
+        module_logger.error("[Logger] Supabase client not initialized. Skipping log.")
+        return
 
+    # We don't need 'timestamp' here because Supabase automatically 
+    # creates the timestamp in the 'created_at' column.
     row = {
-        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "ticker": ticker,
         "sentiment_score": round(sentiment_score, 6),
         "action": action,
@@ -72,9 +54,8 @@ def log_decision(
     }
 
     try:
-        with open(filepath, "a", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(f, fieldnames=_FIELDNAMES)
-            writer.writerow(row)
-        module_logger.debug("[Logger] Logged %s | %s | score=%.4f", ticker, action, sentiment_score)
-    except OSError as exc:
-        module_logger.error("[Logger] Failed to write to %s: %s", filepath, exc)
+        # Insert the data directly into the 'trading_cycles' table in the cloud
+        response = supabase.table("trading_cycles").insert(row).execute()
+        module_logger.info("[Logger] Supabase Insert Success: %s | %s | score=%.4f", ticker, action, sentiment_score)
+    except Exception as exc:
+        module_logger.error("[Logger] Failed to write to Supabase: %s", exc)
