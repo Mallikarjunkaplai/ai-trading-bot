@@ -8,6 +8,7 @@ import argparse
 import logging
 import sys
 import os
+import time
 import requests
 import threading
 from datetime import datetime
@@ -69,9 +70,15 @@ if __name__ == "__main__":
     web_thread = threading.Thread(target=run_web_server, daemon=True)
     web_thread.start()
     
-    # 2. Run the trading cycle
-    run_cycle(dry_run=args.dry_run) 
-
-    # 3. KEEP THE BOT ALIVE (This stops Render from crashing!)
-    log.info("Cycle finished. Keeping server alive for Render...")
-    web_thread.join()
+    # 2. Run the automated trading loop
+    log.info("Starting 30-minute automated trading loop...")
+    while True:
+        try:
+            run_cycle(dry_run=args.dry_run) 
+        except Exception as e:
+            log.error("Error during cycle: %s", e)
+        
+        # Wait 30 minutes (1800 seconds) before running the cycle again.
+        # This keeps the main thread alive indefinitely, satisfying Render.
+        log.info("Cycle finished. Waiting 30 minutes...")
+        time.sleep(1800)
