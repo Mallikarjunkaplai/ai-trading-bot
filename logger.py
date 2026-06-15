@@ -11,17 +11,16 @@ from supabase import create_client, Client
 
 module_logger = logging.getLogger(__name__)
 
-# Point directly to the .env file inside your frontend folder
-dotenv_path = os.path.join(os.getcwd(), 'frontend', '.env')
-load_dotenv(dotenv_path)
+# Load local .env if running on your laptop (Render ignores this and uses its own settings)
+load_dotenv()
 
-# Grab the keys from the frontend .env file
-SUPABASE_URL = os.getenv("VITE_SUPABASE_URL")
-SUPABASE_KEY = os.getenv("VITE_SUPABASE_ANON_KEY")
+# Grab the keys directly from the environment variables (no VITE_ prefix needed)
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 
 # Initialize the Supabase bridge
 if not SUPABASE_URL or not SUPABASE_KEY:
-    module_logger.error("[Logger] Supabase credentials missing! Check frontend/.env file.")
+    module_logger.error("[Logger] Supabase credentials missing! Check Render Environment Variables.")
     supabase = None
 else:
     supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
