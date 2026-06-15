@@ -70,4 +70,8 @@ if __name__ == "__main__":
     web_thread.start()
     
     # 2. Run the trading cycle
-    run_cycle(dry_run=args.dry_run)
+    run_cycle(dry_run=args.dry_run) 
+
+    # 3. KEEP THE BOT ALIVE (This stops Render from crashing!)
+    log.info("Cycle finished. Keeping server alive for Render...")
+    web_thread.join()
